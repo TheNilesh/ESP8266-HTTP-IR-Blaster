@@ -12,19 +12,16 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoOTA.h>
-#include "sha256.h"
 
 #include <Ticker.h>                                           // For LED status
 #include <EasyNTPClient.h>
 
 // User settings are below here
 
-const bool getExternalIP = true;                              // Set to false to disable querying external IP
-
-const bool getTime = true;                                    // Set to false to disable querying for the time
+const bool getTime = false;                                    // Set to false to disable querying for the time
 const int timeOffset = -14400;                                // Timezone offset in seconds
 
-const bool enableMDNSServices = true;                         // Use mDNS services, must be enabled for ArduinoOTA
+const bool enableMDNSServices = false;                         // Use mDNS services, must be enabled for ArduinoOTA
 
 const unsigned int captureBufSize = 150;                      // Size of the IR capture buffer.
 
@@ -128,18 +125,6 @@ void resetReceive() {
 
 
 //+=============================================================================
-// Valid user_id formatting
-//
-bool validUID(char* user_id) {
-  if (!String(user_id).startsWith("amzn1.account.")) {
-      Serial.println("Warning, user_id appears to be in the wrong format, security check will most likely fail. Should start with amzn1.account.***");
-      return false;
-    }
-    return true;
-}
-
-
-//+=============================================================================
 // Valid EPOCH time retrieval
 //
 bool validEPOCH(time_t timenow) {
@@ -152,89 +137,6 @@ bool validEPOCH(time_t timenow) {
 }
 
 //+=============================================================================
-// Valid command request using HMAC
-//
-bool validateHMAC(String epid, String mid, String timestamp, String signature) {
-    userIDError = false;
-    authError = false;
-    ntpError = false;
-    timeAuthError = 0;
-
-    userIDError = !(validUID(user_id));
-
-    time_t timethen = timestamp.toInt();
-    time_t timenow = timeClient.getUnixTime() - timeOffset;
-    time_t timediff = abs(timethen - timenow);
-    if (timediff > 30) {
-      Serial.println("Failed security check, signature is too old");
-      Serial.print("Server: ");
-      Serial.println(timethen);
-      Serial.print("Local: ");
-      Serial.println(timenow);
-      Serial.print("MID: ");
-      Serial.println(mid);
-      timeAuthError = timediff;
-      validEPOCH(timenow);
-      return false;
-    }
-
-    uint8_t *hash;
-    String key = String(user_id);
-    Sha256.initHmac((uint8_t*)key.c_str(), key.length()); // key, and length of key in bytes
-    Sha256.print(epid);
-    Sha256.print(mid);
-    Sha256.print(timestamp);
-    hash = Sha256.resultHmac();
-    String computedSignature = bin2hex(hash, HASH_LENGTH);
-
-    if (computedSignature != signature) {
-      Serial.println("Failed security check, signatures do not match");
-      Serial.print("1: ");
-      Serial.println(signature);
-      Serial.print("2: ");
-      Serial.println(computedSignature);
-      Serial.print("MID: ");
-      Serial.println(mid);
-      authError = true;
-      return false;
-    }
-
-    Serial.println("Passed security check");
-    Serial.print("MID: ");
-    Serial.println(mid);
-    return true;
-}
-
-
-//+=============================================================================
-// Get User_ID from Amazon Token (memory intensive and causes crashing)
-//
-String getUserID(String token)
-{
-  HTTPClient http;
-  http.setTimeout(5000);
-  String url = "https://api.amazon.com/user/profile?access_token=";
-  String uid = "";
-  http.begin(url + token, fingerprint);
-  int httpCode = http.GET();
-  String payload = http.getString();
-  Serial.println(url + token);
-  Serial.println(httpCode);
-  Serial.println(payload);
-  if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.parseObject(payload);
-    uid = json["user_id"].as<String>();
-  } else {
-    Serial.println("Error retrieving user_id");
-    payload = "";
-  }
-  http.end();
-  return uid;
-}
-
-
-//+=============================================================================
 // Toggle state
 //
 void tick()
@@ -242,57 +144,6 @@ void tick()
   int state = digitalRead(ledpin);  // get the current state of GPIO1 pin
   digitalWrite(ledpin, !state);     // set pin to the opposite state
 }
-
-
-//+=============================================================================
-// Get External IP Address
-//
-String externalIP()
-{
-  if (!getExternalIP) {
-    return "0.0.0.0"; // User doesn't want the external IP
-  }
-
-  if (strlen(_ip) > 0) {
-    if (millis() - lastupdate > resetfrequency || lastupdate > millis()) {
-      Serial.println("Reseting cached external IP address");
-      strncpy(_ip, "", 16); // Reset the cached external IP every 72 hours
-    } else {
-      return String(_ip); // Return the cached external IP
-    }
-  }
-
-  HTTPClient http;
-  externalIPError = false;
-  unsigned long start = millis();
-  http.setTimeout(5000);
-  http.begin(serverName, 8245);
-  int httpCode = http.GET();
-
-  if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
-    String payload = http.getString();
-    int pos_start = payload.indexOf("IP Address") + 12; // add 10 for "IP Address" and 2 for ":" + "space"
-    int pos_end = payload.indexOf("</body>", pos_start); // add nothing
-    strncpy(_ip, payload.substring(pos_start, pos_end).c_str(), 16);
-    Serial.print(F("External IP: "));
-    Serial.println(_ip);
-    lastupdate = millis();
-  } else {
-    Serial.println("Error retrieving external IP");
-    Serial.print("HTTP Code: ");
-    Serial.println(httpCode);
-    Serial.println(http.errorToString(httpCode));
-    externalIPError = true;
-  }
-
-  http.end();
-  Serial.print("External IP address request took ");
-  Serial.print(millis() - start);
-  Serial.println(" ms");
-
-  return _ip;
-}
-
 
 //+=============================================================================
 // Turn off the Led after timeout
@@ -570,7 +421,7 @@ void setup() {
         sendHomePage("Invalid passcode", "Unauthorized", 3, 401); // 401
       }
       jsonBuffer.clear();
-    } else if (strlen(user_id) != 0 && !validateHMAC(epid, mid, timestamp, signature)) {
+    } else if (strlen(user_id) != 0) {
       server->send(401, "text/plain", "Unauthorized, HMAC security authentication failed");
     } else {
       digitalWrite(ledpin, LOW);
@@ -658,7 +509,8 @@ void setup() {
           rawblast(raw, khz, rdelay, pulse, pdelay, repeat, pickIRsend(xout),duty);
         } else if (type == "roku") {
           String data = root[x]["data"];
-          rokuCommand(ip, data);
+          Serial.println("roku disabled");
+          //rokuCommand(ip, data);
         } else {
           String data = root[x]["data"];
           String addressString = root[x]["address"];
@@ -695,7 +547,7 @@ void setup() {
       } else {
         sendHomePage("Invalid passcode", "Unauthorized", 3, 401); // 401
       }
-    } else if (strlen(user_id) != 0 && !validateHMAC(epid, mid, timestamp, signature)) {
+    } else if (strlen(user_id) != 0) {
       server->send(401, "text/plain", "Unauthorized, HMAC security authentication");
     } else {
       digitalWrite(ledpin, LOW);
@@ -757,7 +609,7 @@ void setup() {
       }
 
       if (type == "roku") {
-        rokuCommand(ip, data);
+        //rokuCommand(ip, data);
       } else {
         irblast(type, data, len, rdelay, pulse, pdelay, repeat, address, pickIRsend(out));
       }
@@ -795,57 +647,12 @@ void setup() {
   server->begin();
   Serial.println("HTTP Server started on port " + String(port));
 
-  externalIP();
-
-  if (strlen(user_id) > 0) {
-    userIDError = !validUID(user_id);
-    if (!userIDError) {
-      Serial.println("No errors detected with security configuration");
-    }
-
-    // Validation check time
-    time_t timenow = timeClient.getUnixTime() - timeOffset;
-    bool validEpoch = validEPOCH(timenow);
-    if (validEpoch) {
-      Serial.println("EPOCH time obtained for security checks");
-    } else {
-      Serial.println("Invalid EPOCH time, security checks may fail if unable to sync with NTP server");
-    }
-  }
-
   irsend1.begin();
   irsend2.begin();
   irsend3.begin();
   irsend4.begin();
   irrecv.enableIRIn();
   Serial.println("Ready to send and receive IR signals");
-}
-
-//+=============================================================================
-// Send command to local roku
-//
-int rokuCommand(String ip, String data) {
-  String url = "http://" + ip + ":8060/" + data;
-  HTTPClient http;
-  http.begin(url);
-  Serial.println(url);
-  Serial.println("Sending roku command");
-
-  copyCode(last_send_4, last_send_5);
-  copyCode(last_send_3, last_send_4);
-  copyCode(last_send_2, last_send_3);
-  copyCode(last_send, last_send_2);
-
-  strncpy(last_send.data, data.c_str(), 40);
-  last_send.bits = 1;
-  strncpy(last_send.encoding, "roku", 14);
-  strncpy(last_send.address, ip.c_str(), 20);
-  strncpy(last_recv.timestamp, String(timeClient.getUnixTime()).c_str(), 40);
-  last_send.valid = true;
-
-  int output = http.POST("");
-  http.end();
-  return output;
 }
 
 //+=============================================================================
@@ -960,7 +767,7 @@ void sendHeader(int httpcode) {
   server->sendContent("            <li class='active'>\n");
   server->sendContent("              <a href='http://" + WiFi.localIP().toString() + ":" + String(port) + "'>Local <span class='badge'>" + WiFi.localIP().toString() + ":" + String(port) + "</span></a></li>\n");
   server->sendContent("            <li class='active'>\n");
-  server->sendContent("              <a href='http://" + externalIP() + ":" + String(port) + "'>External <span class='badge'>" + externalIP() + ":" + String(port) + "</span></a></li>\n");
+  server->sendContent("              <a href='http://0.0.0.0:" + String(port) + "'>External <span class='badge'>0.0.0.0:" + String(port) + "</span></a></li>\n");
   server->sendContent("            <li class='active'>\n");
   server->sendContent("              <a>MAC <span class='badge'>" + String(WiFi.macAddress()) + "</span></a></li>\n");
   server->sendContent("          </ul>\n");
@@ -1111,7 +918,7 @@ void sendCodePage(Code selCode, int httpcode){
   server->sendContent("            <li>Local IP <span class='label label-default'>JSON</span></li>\n");
   server->sendContent("            <li><pre>http://" + WiFi.localIP().toString() + ":" + String(port) + "/json?plain=[{'data':[" + String(selCode.raw) + "],'type':'raw','khz':38}]</pre></li>\n");
   server->sendContent("            <li>External IP <span class='label label-default'>JSON</span></li>\n");
-  server->sendContent("            <li><pre>http://" + externalIP() + ":" + String(port) + "/json?plain=[{'data':[" + String(selCode.raw) + "],'type':'raw','khz':38}]</pre></li></ul>\n");
+  server->sendContent("            <li><pre>http://0.0.0.0:" + String(port) + "/json?plain=[{'data':[" + String(selCode.raw) + "],'type':'raw','khz':38}]</pre></li></ul>\n");
   } else if (String(selCode.encoding) == "PANASONIC") {
   //} else if (strtoul(selCode.address, 0, 0) > 0) {
   server->sendContent("      <div class='row'>\n");
@@ -1122,14 +929,14 @@ void sendCodePage(Code selCode, int httpcode){
   server->sendContent("            <li>Local IP <span class='label label-default'>MSG</span></li>\n");
   server->sendContent("            <li><pre>http://" + WiFi.localIP().toString() + ":" + String(port) + "/msg?code=" + String(selCode.data) + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "&address=" + String(selCode.address) + "</pre></li>\n");
   server->sendContent("            <li>External IP <span class='label label-default'>MSG</span></li>\n");
-  server->sendContent("            <li><pre>http://" + externalIP() + ":" + String(port) + "/msg?code=" + selCode.data + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "&address=" + String(selCode.address) + "</pre></li></ul>\n");
+  server->sendContent("            <li><pre>http://0.0.0.0:" + String(port) + "/msg?code=" + selCode.data + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "&address=" + String(selCode.address) + "</pre></li></ul>\n");
   server->sendContent("          <ul class='list-unstyled'>\n");
   server->sendContent("            <li>Hostname <span class='label label-default'>JSON</span></li>\n");
   server->sendContent("            <li><pre>http://" + String(host_name) + ".local:" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + ",'address':'" + String(selCode.address) + "'}]</pre></li>\n");
   server->sendContent("            <li>Local IP <span class='label label-default'>JSON</span></li>\n");
   server->sendContent("            <li><pre>http://" + WiFi.localIP().toString() + ":" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + ",'address':'" + String(selCode.address) + "'}]</pre></li>\n");
   server->sendContent("            <li>External IP <span class='label label-default'>JSON</span></li>\n");
-  server->sendContent("            <li><pre>http://" + externalIP() + ":" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + ",'address':'" + String(selCode.address) + "'}]</pre></li></ul>\n");
+  server->sendContent("            <li><pre>http://0.0.0.0:" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + ",'address':'" + String(selCode.address) + "'}]</pre></li></ul>\n");
   } else {
   server->sendContent("      <div class='row'>\n");
   server->sendContent("        <div class='col-md-12'>\n");
@@ -1139,14 +946,14 @@ void sendCodePage(Code selCode, int httpcode){
   server->sendContent("            <li>Local IP <span class='label label-default'>MSG</span></li>\n");
   server->sendContent("            <li><pre>http://" + WiFi.localIP().toString() + ":" + String(port) + "/msg?code=" + String(selCode.data) + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "</pre></li>\n");
   server->sendContent("            <li>External IP <span class='label label-default'>MSG</span></li>\n");
-  server->sendContent("            <li><pre>http://" + externalIP() + ":" + String(port) + "/msg?code=" + selCode.data + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "</pre></li></ul>\n");
+  server->sendContent("            <li><pre>http://0.0.0.0:" + String(port) + "/msg?code=" + selCode.data + ":" + String(selCode.encoding) + ":" + String(selCode.bits) + "</pre></li></ul>\n");
   server->sendContent("          <ul class='list-unstyled'>\n");
   server->sendContent("            <li>Hostname <span class='label label-default'>JSON</span></li>\n");
   server->sendContent("            <li><pre>http://" + String(host_name) + ".local:" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + "}]</pre></li>\n");
   server->sendContent("            <li>Local IP <span class='label label-default'>JSON</span></li>\n");
   server->sendContent("            <li><pre>http://" + WiFi.localIP().toString() + ":" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + "}]</pre></li>\n");
   server->sendContent("            <li>External IP <span class='label label-default'>JSON</span></li>\n");
-  server->sendContent("            <li><pre>http://" + externalIP() + ":" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + "}]</pre></li></ul>\n");
+  server->sendContent("            <li><pre>http://0.0.0.0:" + String(port) + "/json?plain=[{'data':'" + String(selCode.data) + "','type':'" + String(selCode.encoding) + "','length':" + String(selCode.bits) + "}]</pre></li></ul>\n");
   }
   server->sendContent("        </div>\n");
   server->sendContent("     </div>\n");
