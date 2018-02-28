@@ -507,10 +507,6 @@ void setup() {
           int khz = root[x]["khz"];
           if (khz <= 0) khz = 38; // Default to 38khz if not set
           rawblast(raw, khz, rdelay, pulse, pdelay, repeat, pickIRsend(xout),duty);
-        } else if (type == "roku") {
-          String data = root[x]["data"];
-          Serial.println("roku disabled");
-          //rokuCommand(ip, data);
         } else {
           String data = root[x]["data"];
           String addressString = root[x]["address"];
@@ -607,12 +603,7 @@ void setup() {
       if (simple) {
         server->send(200, "text/html", "Success, code sent");
       }
-
-      if (type == "roku") {
-        //rokuCommand(ip, data);
-      } else {
-        irblast(type, data, len, rdelay, pulse, pdelay, repeat, address, pickIRsend(out));
-      }
+      irblast(type, data, len, rdelay, pulse, pdelay, repeat, address, pickIRsend(out));
 
       if (!simple) {
         sendHomePage("Code Sent", "Success", 1); // 200
@@ -680,13 +671,7 @@ String getValue(String data, char separator, int index)
 // Return which IRsend object to act on
 //
 IRsend pickIRsend (int out) {
-  switch (out) {
-    case 1: return irsend1;
-    case 2: return irsend2;
-    case 3: return irsend3;
-    case 4: return irsend4;
-    default: return irsend1;
-  }
+  return irsend1;
 }
 
 
