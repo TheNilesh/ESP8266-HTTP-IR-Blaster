@@ -1,10 +1,8 @@
 # IR Controller
 
-ESP8266 Compatible IR Blaster that accepts HTTP commands for use with services like Amazon's Alexa
+ESP8266 Compatible IR Blaster that accepts HTTP commands and emits IR signal through attached IR Led
 
-<a href="https://youtu.be/JysKXOdrOlM"><img width="475" alt="Setup" src="https://user-images.githubusercontent.com/3608298/31304294-a24bb388-aaec-11e7-8061-e8c3a1556b18.png"></a>
-
-The purpose of this project was to create a Wi-Fi enabled IR blaster that could be controlled with Amazon Alexa
+The purpose of this project was to create a Wi-Fi enabled IR blaster that could be controlled with voice.
 This was designed with the NodeMCU board but should be compatible with multiple ESP8266 variants
 
 Includes a functional web portal for code capture, output monitoring, and device state tracking
