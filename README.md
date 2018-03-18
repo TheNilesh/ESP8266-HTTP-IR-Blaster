@@ -18,9 +18,6 @@ Setup
 4. Load the `IRController.ino` blueprint from this repository
 5. Upload blueprint to your ESP8266 (the .ino file). Monitor via serial at 115200 baud rate
 6. Device will boot into WiFi access point mode initially with SSID `IRBlaster Configuration`, IP address `192.168.4.1`. Connect to this and configure your access point settings using WiFi Manager. If your router supports mDNS/Bonjour you can now access your device on your local network via the hostname you specified (`http://hostname.local:port/`), otherwise via its local IP address (this IP address is displayed on the serial output)
-7. Forward whichever port your ESP8266 web server is running on so that it can be accessed from outside your local network, this is critical since Alexa commands come from Amazon's servers, not locally
-8. Download the IR Controller Alexa skill and start creating your devices. Each IR command will require a URL which can be saved. Choose whichever functionality you desire. Information on creating the URLs can be found below
-
 
 Server Info
 ---------------
@@ -32,10 +29,6 @@ Capturing Codes
 ---------------
 Your last scanned code can be accessed via web at `http://xxx.xxx.xxx.xxx:port/` or via serial monitoring over USB at 115200 baud. Most codes will be recognized and displayed in the format `A90:SONY:12`. Make a note of the code displayed in the serial output as you will need it for your maker channel URL. If your code is not recognized scroll down the JSON section of this read me.
 
-NodeMCU PCU
----------------
-@raptordemon has created a PCB that works great with this project. Use version 1.5
-https://easyeda.com/raptordemon/ESP8266_IR_blaster-f8f224faba554bf3bb6ce0e32759fc23
 
 Basic Output
 --------------
@@ -133,7 +126,7 @@ Set GPIO10 to ground to force a WiFi configuration reset, this will boot the dev
 
 Device State Memory
 ---------------
-By adding the `device` and `state` parameters to your URL or JSON object, the device will remember the last sent state of the device. This is useful since Alexa has separate on and off commands, and without knowing the device state will end up turning the TV on if an off command is issued
+By adding the `device` and `state` parameters to your URL or JSON object, the device will remember the last sent state of the device.
 
 Example Turn On URL (if TV was already turned on, this command will do nothing):
 `http://xxx.xxx.xxx.xxx:port/msg?code=A90:SONY:12&pass=yourpass&device=tv&state=1`
@@ -143,7 +136,7 @@ Example Turn Off URL (if TV was already turned off, this command will do nothing
 
 Minimal Output
 ---------------
-For configuring URLs to work with IFTTT or the IR Controller skill, or other automation services where the HTML output of the device will never be seen by a human, add `&simple=1` to the URL to simplify the data sent and speed up the response time
+For configuring automation services where the HTML output of the device will never be seen by a human, add `&simple=1` to the URL to simplify the data sent and speed up the response time
 
 Example:
 `http://xxx.xxx.xxx.xxx:port/msg?code=A90:SONY:12&pass=yourpass&simple=1`
