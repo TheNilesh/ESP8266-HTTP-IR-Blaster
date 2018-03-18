@@ -7,34 +7,7 @@ This was designed with the NodeMCU board but should be compatible with multiple 
 
 Includes a functional web portal for code capture, output monitoring, and device state tracking
 
-Device gives real time LED feedback, can handle complex code sequences for multi-device home theater control, and full integration with Amazon Alexa via the smart home entertainment devices API and the `IR Controller` Alexa skill
 
-Hardware
---------------
-![Fancy](https://user-images.githubusercontent.com/3608298/33769535-93793c30-dbf8-11e7-97ef-263cef2ec0c4.jpg)
-![Breadboard Build](https://user-images.githubusercontent.com/3608298/31293572-90c2e574-aaa5-11e7-99e0-7b3df2db3292.jpg)
-![Schematic](https://user-images.githubusercontent.com/3608298/30983611-f258c95a-a458-11e7-99c5-ba088727c928.PNG)
-
-The hardware is based on the NodeMCU ESP8266 board and uses an infrared LED combined with the 2N2222 transistor for increased current and range. Values of the resistors seen in the schematic are variable and will depend on the specifications of your LED. If you're using the LED recommended below then a 1000 ohm resister to the 2N2222 transistor and a 10 ohm resistor to the LED itself are appropriate values, otherwise please use an LED resistance calculator. In total the parts come in around $10 so building a controller for each IR enabled device in your home is very feasible, and most components are cheaper in bulk
-
-Shopping List:
-- [ESP8266 NodeMCU Board](https://www.amazon.com/gp/product/B01IK9GEQG/)
-- [IR Receiver](https://www.amazon.com/gp/product/B00EFOQEUM/)
-- [Super bright IR Led](https://www.amazon.com/gp/product/B00ULB0U44/)
-- [2N2222 Transistor](https://www.amazon.com/gp/product/B00R1M3DA4/)
-- [Resistors](https://www.amazon.com/gp/product/B00YX75O5M/)
-
-*These are just quick Amazon references. Parts can be purchased cheaper with longer shipping times from places like AliExpress*
-
-Drivers
---------------
-Install the NodeMCU drivers for your respective operating system if they are not autodetected
-
-https://www.silabs.com/products/mcu/Pages/USBtoUARTBridgeVCPDrivers.aspx
-
-Alexa Skill
---------------
-The companion skill for the Amazon Alexa service is available [here](https://www.amazon.com/Michael-Higgins-IR-Controller/dp/B0762YYDS9) for US/CA/UK/IN/DE Alexa customers
 
 Setup
 --------------
@@ -48,17 +21,6 @@ Setup
 7. Forward whichever port your ESP8266 web server is running on so that it can be accessed from outside your local network, this is critical since Alexa commands come from Amazon's servers, not locally
 8. Download the IR Controller Alexa skill and start creating your devices. Each IR command will require a URL which can be saved. Choose whichever functionality you desire. Information on creating the URLs can be found below
 
-Alexa Setup
----------------
-1. Download the `IR Controller` skill from the Alexa skill store
-2. Login with your Amazon account
-3. Go to https://tehpsyc.pythonanywhere.com/
-4. Login with the same Amazon account you used for the skill login
-5. Create a new device by specifying the friendlyName, endpointId, and description
-6. Add whichever functionality you want your device to have by scrolling through the options on the page
-7. Save your new device
-8. Run device discovery on your echo device by saying "Alexa, discover devices" or via https://alexa.amazon.com/
-9. Verify that your new device was discovered online or in the Alexa app and enjoy!
 
 Server Info
 ---------------
@@ -152,14 +114,6 @@ Sample URL using the same 3 button JSON sequence as above
 http://xxx.xxx.xxx.xxx:port/json?pass=yourpass&plain=[{"type":"nec","data":"FF827D","length":32,"repeat":3,"rdelay":800},{"type":"nec","data":"FFA25D","length":32,"repeat":3,"rdelay":800},{"type":"nec","data":"FF12ED","length":32,"rdelay":1000}]
 ```
 
-Security
----------------
-Due to limitations imposed by the hardware in the ESP8266, there is not enough free memory to communicate over HTTPS/SSL. To protect your devices, during the WiFiManager setup process you can specify your Amazon user_id which will act as a secret key that allows SHA256 HMAC authentication to take place. Without this time sensitive signature no codes will be sent from the device. The user_id is a unique identifier tied to your account and my developer account, not shared across any other Amazon services. This unique ID can be found at the bottom of the tehpsyc.pythonanywhere.com page. The format is `amzn1.account.xxx`, **NOT your account email**. Enabling this feature will prevent sending commands via other means but greatly increases the security of the device.
-
-To send commands over SSL you can use an intermediate service such as Smartthings (see below), use a reverse proxy with HTTPS support (which should work with the native Alexa skill) such a nginx, or handle everything on the local network and not use the functionality with Alexa.
-
-This article provides some details on using nginx
-https://jjssoftware.github.io/secure-your-esp8266/
 
 Multiple LED Setup
 --------------
@@ -194,26 +148,3 @@ For configuring URLs to work with IFTTT or the IR Controller skill, or other aut
 Example:
 `http://xxx.xxx.xxx.xxx:port/msg?code=A90:SONY:12&pass=yourpass&simple=1`
 
-IFTTT
---------------
-If you are unable to use the Alexa skill for whatever reason, or you are using a competing voice control product or some other implementation, then IFTTT can also be used to execute commands using the Maker channel HTTP commands. Simply generate your URLs and save them in the Maker channel
-
-Smartthings
---------------
-For a great write up and instructional on how to integrate this device with Smartthings please visit http://thingsthataresmart.wiki/index.php?title=How_to_Control_your_TV_through_Alexa_and_Smartthings
-
-Thanks to @dham102
-
-Roku
---------------
-The Roku device supports sending commands via an API to simulate remote button presses over HTTP, but only allows connections via a local IP address. This blueprint supports sending these commands and acts as a bridge between IFTTT/Alexa to control the Roku with basic commands
-
-Roku commands require 3 parameters that can be sent as a Simple URL or part of a JSON collection. Parameters include:
-- `data` - [Roku code](https://sdkdocs.roku.com/display/sdkdoc/External+Control+Guide)
-- `type` - Type of signal transmitted. Must be set to `roku`
-- `ip` - Local IP address of your Roku device
-
-Example Roku command to simulate pressing play button on a Roku with local IP `10.0.1.3`
-```
-http://xxx.xxx.xxx.xxx:port/msg?pass=yourpass&type=roku&data=keypress/play&ip=10.0.1.3
-```
