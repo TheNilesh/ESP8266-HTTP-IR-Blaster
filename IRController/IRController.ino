@@ -10,12 +10,9 @@
 
 #include <ArduinoJson.h>
 #include <ESP8266WebServer.h>
-#include <ArduinoOTA.h>
-
 #include <Ticker.h>                                           // For LED status
 
 // User settings are below here
-const bool enableMDNSServices = true;                         // Use mDNS services, must be enabled for ArduinoOTA
 const unsigned int captureBufSize = 150;                      // Size of the IR capture buffer.
 
 const int receiverPin = 14;                                   // Receiving pin
@@ -23,13 +20,13 @@ const int senderPin = 4;                                      // IR sender pin c
 const int configpin = 10;                                     // Reset Pin
 
 // User settings are above here
-const int ledpin = BUILTIN_LED;                               // Built in LED defined for WEMOS people
-const char *wifiConfigName = "HTTP IR Remote Config";         // SSID for this
+const int ledpin = LED_BUILTIN;                               // Built in LED defined for WEMOS people
+const char *wifiConfigName = "IR Remote Config";              // SSID for this
 int port = 80;
-char passcode[20] = "";
+char password[20] = "";
 char hostName[20] = "irremote";
 char portStr[6] = "80";
-char userId[60] = "";
+char username[60] = "";
 
 char staticIp[16] = "10.0.1.10";
 char staticGw[16] = "10.0.1.1";
@@ -41,8 +38,8 @@ Ticker ticker;
 bool shouldSaveConfig = false;                                // Flag for saving data
 bool holdReceive = false;                                     // Flag to prevent IR receiving while transmitting
 
-IRrecv irrecv(receiverPin, captureBufSize);
-IRsend irsend1(senderPin);
+IRrecv irrecv(receiverPin, captureBufSize); //receive IR signal from irrecv
+IRsend irsend(senderPin);                   //send IR signal to irsend
 
 class Code {
   public:
@@ -79,18 +76,14 @@ void resetReceive() {
   }
 }
 
-//+=============================================================================
 // Toggle state
-//
 void tick()
 {
   int state = digitalRead(ledpin);  // get the current state of GPIO1 pin
   digitalWrite(ledpin, !state);     // set pin to the opposite state
 }
 
-//+=============================================================================
 // Turn off the Led after timeout
-//
 void disableLed()
 {
   Serial.println("Turning off the LED to save power.");
@@ -98,9 +91,7 @@ void disableLed()
   ticker.detach();                                      // Stopping the ticker
 }
 
-//+=============================================================================
 // Gets called when WiFiManager enters configuration mode
-//
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("Entered config mode");
   Serial.println(WiFi.softAPIP());
@@ -111,9 +102,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 
-//+=============================================================================
 // Gets called when device loses connection to the accesspoint
-//
 void lostWifiCallback (const WiFiEventStationModeDisconnected& evt) {
   Serial.println("Lost Wifi");
   // reset and try again, or maybe put it to deep sleep
@@ -122,18 +111,16 @@ void lostWifiCallback (const WiFiEventStationModeDisconnected& evt) {
 }
 
 
-//+=============================================================================
 // First setup of the Wifi.
 // If return true, the Wifi is well connected.
 // Should not return false if Wifi cannot be connected, it will loop
-//
 bool setupWifi(bool resetConf) {
   // start ticker with 0.5 because we start in AP mode and try to connect
   ticker.attach(0.5, tick);
   WiFiManager wifiManager;
-  // reset settings - for testing
-  if (resetConf)
+  if (resetConf) {
     wifiManager.resetSettings();
+  }
 
   // set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
@@ -163,8 +150,8 @@ bool setupWifi(bool resetConf) {
           Serial.println("\nparsed json");
 
           if (json.containsKey("hostname")) strncpy(hostName, json["hostname"], 20);
-          if (json.containsKey("passcode")) strncpy(passcode, json["passcode"], 20);
-          if (json.containsKey("userId")) strncpy(userId, json["userId"], 60);
+          if (json.containsKey("password")) strncpy(password, json["password"], 20);
+          if (json.containsKey("username")) strncpy(username, json["username"], 60);
           if (json.containsKey("portStr")) {
             strncpy(portStr, json["portStr"], 6);
             port = atoi(json["portStr"]);
@@ -181,14 +168,14 @@ bool setupWifi(bool resetConf) {
     Serial.println("failed to mount FS");
   }
 
-  WiFiManagerParameter customHostname("hostname", "Choose a hostname to this IR Controller", hostName, 20);
+  WiFiManagerParameter customHostname("hostname", "Hostname", hostName, 20);
   wifiManager.addParameter(&customHostname);
-  WiFiManagerParameter customPasscode("passcode", "Choose a passcode", passcode, 20);
-  wifiManager.addParameter(&customPasscode);
-  WiFiManagerParameter customPort("portStr", "Choose a port", portStr, 6);
+  WiFiManagerParameter customPort("portStr", "Web Server Port", portStr, 6);
   wifiManager.addParameter(&customPort);
-  WiFiManagerParameter customUserid("userId", "Enter your userId", userId, 60);
-  wifiManager.addParameter(&customUserid);
+  WiFiManagerParameter customUsername("username", "Username", username, 60);
+  wifiManager.addParameter(&customUsername);
+  WiFiManagerParameter customPassword("password", "Password", password, 20);
+  wifiManager.addParameter(&customPassword);
 
   IPAddress sip, sgw, ssn;
   sip.fromString(staticIp);
@@ -208,9 +195,9 @@ bool setupWifi(bool resetConf) {
   }
   Serial.println("Connected to WiFi");
   strncpy(hostName, customHostname.getValue(), 20);
-  strncpy(passcode, customPasscode.getValue(), 20);
+  strncpy(password, customPassword.getValue(), 20);
   strncpy(portStr, customPort.getValue(), 6);
-  strncpy(userId, customUserid.getValue(), 60);
+  strncpy(username, customUsername.getValue(), 60);
   port = atoi(portStr);
 
   if (server != NULL) {
@@ -221,7 +208,7 @@ bool setupWifi(bool resetConf) {
   // Reset device if lost wifi Connection
   WiFi.onStationModeDisconnected(&lostWifiCallback);
 
-  Serial.println("WiFi connected! User chose hostname '" + String(hostName) + String("' passcode '") + String(passcode) + "' and port '" + String(portStr) + "'");
+  Serial.println("WiFi connected! User chose hostname '" + String(hostName) + String("' password '") + String(password) + "' and port '" + String(portStr) + "'");
 
   // save the custom parameters to FS
   if (shouldSaveConfig) {
@@ -229,9 +216,9 @@ bool setupWifi(bool resetConf) {
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["hostname"] = hostName;
-    json["passcode"] = passcode;
+    json["password"] = password;
     json["portStr"] = portStr;
-    json["userId"] = userId;
+    json["username"] = username;
     json["ip"] = WiFi.localIP().toString();
     json["gw"] = WiFi.gatewayIP().toString();
     json["sn"] = WiFi.subnetMask().toString();
@@ -256,9 +243,88 @@ bool setupWifi(bool resetConf) {
   return true;
 }
 
-//+=============================================================================
 // Setup web server and IR receiver/blaster
-//
+void handleRoot() {
+  Serial.println("Connection received at home page");
+  server->send(200, "text/plain", "Welcome to IR Blaster");
+}
+
+void doGet() {
+  Serial.println("GET received");
+  Serial.println("Connection received to obtain last received ir signal");
+  if (lastRecvdCode.valid) {
+    String json = "";
+    // send last received
+    if (String(lastRecvdCode.encoding) == "UNKNOWN") {
+      json = "[{\"data\":[" + String(lastRecvdCode.raw) + "],\"type\":\"raw\",\"khz\":38}]";
+    } else if (String(lastRecvdCode.encoding) == "PANASONIC") {
+      json = "[{\"data\":\"" + String(lastRecvdCode.data) + "\",\"type\":\"" + String(lastRecvdCode.encoding) + "\",\"length\":" + String(lastRecvdCode.bits) + ",\"address\":\"" + String(lastRecvdCode.address) + "\"}";
+    } else {
+      json = "[{\"data\":\"" + String(lastRecvdCode.data) + "\",\"type\":\"" + String(lastRecvdCode.encoding) + "\",\"length\":" + String(lastRecvdCode.bits) + "}]";
+    }
+    server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server->send(200, "application/json", json);
+  } else {
+    server->send(404, "application/json", "{\"error\":\"No code received\"}");
+  }
+}
+
+void doPost() {
+  Serial.println("POST received");
+  Serial.println("Connection received - for sending ir signal");
+  if ( ! server->hasArg("plain)) {
+    server->send(400, "application/json", "{\"error\":\"JSON not received\"}");
+  }
+  DynamicJsonBuffer jsonBuffer;
+  JsonArray& root = jsonBuffer.parseArray(server->arg("plain"));
+  if ( ! root.success()) {
+    Serial.println("JSON parsing failed");
+    server->send(400, "application/json", "{\"error\":\"JSON parsing failed\"}");
+    jsonBuffer.clear();
+  } else {
+    digitalWrite(ledpin, LOW);
+    ticker.attach(0.5, disableLed);
+    server->send(200, "application/json", "{\"message\":\"success\"}");
+    //Processing array of messages
+    for (int i = 0; i < root.size(); i++) {
+      String type = root[i]["type"];
+      String ip = root[i]["ip"];
+      int rdelay = root[i]["rdelay"];
+      int pulse = root[i]["pulse"];
+      int pdelay = root[i]["pdelay"];
+      int repeat = root[i]["repeat"];
+      int iout = root[i]["out"];
+      int duty = root[i]["duty"];
+
+      if (pulse <= 0) pulse = 1; // Make sure pulse isn't 0
+      if (repeat <= 0) repeat = 1; // Make sure repeat isn't 0
+      if (pdelay <= 0) pdelay = 100; // Default pdelay
+      if (rdelay <= 0) rdelay = 1000; // Default rdelay
+      if (duty <= 0) duty = 50; // Default duty
+
+      if (type == "delay") {
+        delay(rdelay);
+      } else if (type == "raw") {
+        JsonArray &raw = root[i]["data"]; // Array of unsigned int values for the raw signal
+        int khz = root[i]["khz"];
+        if (khz <= 0) khz = 38; // Default to 38khz if not set
+        rawblast(raw, khz, rdelay, pulse, pdelay, repeat, irsend, duty);
+      } else {
+        String data = root[i]["data"];
+        String addressString = root[i]["address"];
+        long address = strtoul(addressString.c_str(), 0, 0);
+        int len = root[i]["length"];
+        irblast(type, data, len, rdelay, pulse, pdelay, repeat, address, irsend);
+      }
+    }
+    jsonBuffer.clear();
+  }
+}
+
+void handleNotFound() {
+  server->send(404, "text/plain", "");
+}
+
 void setup() {
   // Initialize serial
   Serial.begin(115200);
@@ -273,9 +339,9 @@ void setup() {
   Serial.print(configpin);
   Serial.print(" set to: ");
   Serial.println(digitalRead(configpin));
-  if ( ! setupWifi(digitalRead(configpin) == LOW))
+  if ( ! setupWifi(digitalRead(configpin) == LOW)) {
     return;
-
+  }
   Serial.println("WiFi configuration complete");
 
   if (strlen(hostName) > 0) {
@@ -296,123 +362,42 @@ void setup() {
 
   Serial.print("Local IP: ");
   Serial.println(WiFi.localIP().toString());
-  Serial.println("URL to send commands: http://" + String(hostName) + ".local:" + portStr);
-
-  if (enableMDNSServices) {
-    // Configure OTA Update
-    ArduinoOTA.setPort(8266);
-    ArduinoOTA.setHostname(hostName);
-    ArduinoOTA.onStart([]() {
-      Serial.println("Start");
-    });
-    ArduinoOTA.onEnd([]() {
-      Serial.println("\nEnd");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
-    ArduinoOTA.begin();
-    Serial.println("ArduinoOTA started");
-
-    // Configure mDNS
-    MDNS.addService("http", "tcp", port); // Announce the ESP as an HTTP service
-    Serial.println("MDNS http service added. Hostname is set to " + String(hostName) + ".local:" + String(port));
-  }
-
-  Serial.println("Adding request url handlers on for HTTP server");
-  server->on("/json", []() { // TODO: Change it to POST /ircodes
-    Serial.println("Connection received - for sending ir signal");
-    DynamicJsonBuffer jsonBuffer;
-    JsonArray& root = jsonBuffer.parseArray(server->arg("plain"));
-    if ( ! root.success()) {
-      Serial.println("JSON parsing failed");
-      server->send(400, "application/json", "{\"error\":\"JSON parsing failed\"}");
-      jsonBuffer.clear();
+  Serial.println("URL to send commands: http://" + WiFi.localIP().toString() + ":" + portStr);
+  MDNS.addService("http", "tcp", port); // Announce the ESP as an HTTP service
+  Serial.println("MDNS http service added. Hostname is set to " + String(hostName) + ".local");
+  Serial.println("Adding request handlers for HTTP");
+  server->on("/ircodes", []() {
+    Serial.print("Request recvd");
+    //TODO: Enable authentications
+    /*
+    if ( ! server->authenticate(username, password)) {
+      Serial.println("Invalid username/password");
+      return server->requestAuthentication();
+    }
+    Serial.println("Authenticated");
+    */
+    if (server->method() == HTTP_GET) {
+      doGet();
+    } else if (server->method() == HTTP_POST) {
+      doPost();
     } else {
-      //TODO: Verify authorization header
-      digitalWrite(ledpin, LOW);
-      ticker.attach(0.5, disableLed);
-      server->send(200, "application/json", "{\"message\":\"success\"}");
-      //Processing array of messages
-      for (int i = 0; i < root.size(); i++) {
-        String type = root[i]["type"];
-        String ip = root[i]["ip"];
-        int rdelay = root[i]["rdelay"];
-        int pulse = root[i]["pulse"];
-        int pdelay = root[i]["pdelay"];
-        int repeat = root[i]["repeat"];
-        int iout = root[i]["out"];
-        int duty = root[i]["duty"];
-
-        if (pulse <= 0) pulse = 1; // Make sure pulse isn't 0
-        if (repeat <= 0) repeat = 1; // Make sure repeat isn't 0
-        if (pdelay <= 0) pdelay = 100; // Default pdelay
-        if (rdelay <= 0) rdelay = 1000; // Default rdelay
-        if (duty <= 0) duty = 50; // Default duty
-
-        if (type == "delay") {
-          delay(rdelay);
-        } else if (type == "raw") {
-          JsonArray &raw = root[i]["data"]; // Array of unsigned int values for the raw signal
-          int khz = root[i]["khz"];
-          if (khz <= 0) khz = 38; // Default to 38khz if not set
-          rawblast(raw, khz, rdelay, pulse, pdelay, repeat, irsend1, duty);
-        } else {
-          String data = root[i]["data"];
-          String addressString = root[i]["address"];
-          long address = strtoul(addressString.c_str(), 0, 0);
-          int len = root[i]["length"];
-          irblast(type, data, len, rdelay, pulse, pdelay, repeat, address, irsend1);
-        }
-      }
-      jsonBuffer.clear();
+      server->send(415, "text/plain", "");
     }
   });
+  
+  server->on("/", handleRoot);
+  server->onNotFound(handleNotFound);
 
-  server->on("/received", []() { //TODO:Change it to GET /codes
-    Serial.println("Connection received to obtain last received ir signal");
-    if (lastRecvdCode.valid) {
-      String json = "";
-      // send last received
-      if (String(lastRecvdCode.encoding) == "UNKNOWN") {
-        json = "[{\"data\":[" + String(lastRecvdCode.raw) + "],\"type\":\"raw\",\"khz\":38}]";
-      } else if (String(lastRecvdCode.encoding) == "PANASONIC") {
-        json = "[{\"data\":\"" + String(lastRecvdCode.data) + "\",\"type\":\"" + String(lastRecvdCode.encoding) + "\",\"length\":" + String(lastRecvdCode.bits) + ",\"address\":\"" + String(lastRecvdCode.address) + "\"}";
-      } else {
-        json = "[{\"data\":\"" + String(lastRecvdCode.data) + "\",\"type\":\"" + String(lastRecvdCode.encoding) + "\",\"length\":" + String(lastRecvdCode.bits) + "}]";
-      }
-      server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-      server->send(200, "application/json", json);
-    } else {
-      server->send(404, "application/json", "{\"error\":\"No code received\"}");
-    }
-  });
-
-  server->on("/", []() {
-    Serial.println("Connection received at home page");
-    //TODO: send json for welcome
-    server->send(200, "text/plain", "Welcome to IR Blaster");
-  });
   Serial.println("Done adding url handlers. Starting HTTP server");
   server->begin();
   Serial.println("HTTP Server started on port " + String(port));
 
-  irsend1.begin();
+  irsend.begin();
   irrecv.enableIRIn();
   Serial.println("Ready to send and receive IR signals");
 }
 
-//+=============================================================================
 // Split string by character
-//
 String getValue(String data, char separator, int index)
 {
   int found = 0;
@@ -430,9 +415,7 @@ String getValue(String data, char separator, int index)
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-//+=============================================================================
 // Display encoding type
-//
 String encoding(decode_results *results) {
   String output;
   switch (results->decode_type) {
@@ -460,11 +443,8 @@ String encoding(decode_results *results) {
   return output;
 }
 
-//+=============================================================================
 // Code to string
-//
-void fullCode (decode_results *results)
-{
+void fullCode (decode_results *results) {
   Serial.print("One line: ");
   serialPrintUint64(results->value, 16);
   Serial.print(":");
@@ -478,11 +458,8 @@ void fullCode (decode_results *results)
                    "Edit IRController.ino and increase captureBufSize");
 }
 
-//+=============================================================================
 // Code to JsonObject
-//
-void cvrtCode(Code& codeData, decode_results *results)
-{
+void cvrtCode(Code& codeData, decode_results *results) {
   strncpy(codeData.data, uint64ToString(results->value, 16).c_str(), 40);
   strncpy(codeData.encoding, encoding(results).c_str(), 14);
   codeData.bits = results->bits;
@@ -524,9 +501,7 @@ void dumpInfo(decode_results *results) {
 }
 
 
-//+=============================================================================
 // Dump out the decode_results structure.
-//
 void dumpRaw(decode_results *results) {
   // Print Raw data
   Serial.print("Timing[");
@@ -694,7 +669,6 @@ void irblast(String type, String dataStr, unsigned int len, int rdelay, int puls
   resetReceive();
 }
 
-
 void rawblast(JsonArray &raw, int khz, int rdelay, int pulse, int pdelay, int repeat, IRsend irsend, int duty) {
   Serial.println("Raw transmit");
   holdReceive = true;
@@ -729,7 +703,6 @@ void rawblast(JsonArray &raw, int khz, int rdelay, int pulse, int pdelay, int re
 
 void loop() {
   server->handleClient();
-  ArduinoOTA.handle();
   decode_results results;                                        // Somewhere to store the results
   if (irrecv.decode(&results) && !holdReceive) {                  // Grab an IR code
     //TODO: Lot of noise signal received, ignore them dont let them overwrite lastRecvdCode
